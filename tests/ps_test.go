@@ -12,7 +12,6 @@ import (
 
 func psSetup(t *testing.T) *itutils.DeisTestConfig {
 	cfg := itutils.GetGlobalConfig()
-	cfg.ExampleApp = itutils.GetRandomApp()
 	cfg.AppName = "pssample"
 	cmd := itutils.GetCommand("auth", "login")
 	itutils.Execute(t, cmd, cfg, false, "")
