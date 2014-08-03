@@ -1345,6 +1345,129 @@ class DeisClient(object):
         else:
             raise ResponseError(response)
 
+    def limit(self, args):
+        """
+        Valid commands for limit:
+
+        limit:list         list resource limits for an app
+        limit:set          set resource limits for an app
+        config:unset       unset resource limits for an app
+
+        Use `deis help [command]` to learn more.
+        """
+        sys.argv[1] = 'limit:list'
+        args = docopt(self.limit_list.__doc__)
+        return self.limit_list(args)
+
+    def limit_list(self, args):
+        """
+        Lists resource limits for an application.
+
+        Usage: deis limit:list [options]
+
+        Options:
+          -a --app=<app>
+            the uniquely identifiable name of the application.
+        """
+        app = args.get('--app')
+        if not app:
+            app = self._session.app
+        response = self._dispatch('get', "/api/apps/{}/limit".format(app))
+        if response.status_code == requests.codes.ok:  # @UndefinedVariable
+            self._print_limits(response.json())
+        else:
+            raise ResponseError(response)
+
+    def limit_set(self, args):
+        """
+        Sets resource limits for an application
+
+        Usage: deis limit:set <type>=<limit>... [options]
+
+        Arguments:
+          <type>
+            the process type as defined in your Procfile, such as 'web' or 'worker'.
+            Note that Dockerfile apps have a default 'cmd' process type.
+          <limit>
+            memory limit (format: <number><unit>, where unit = B, K, M or G)
+            example: web=1G,worker=256M,clock=64K
+
+        Options:
+          -a --app=<app>
+            the uniquely identifiable name for the application.
+        """
+        app = args.get('--app')
+        if not app:
+            app = self._session.app
+        body = {'memory': json.dumps(dictify(args['<type>=<limit>']))}
+        sys.stdout.write('Applying limits... ')
+        sys.stdout.flush()
+        try:
+            progress = TextProgress()
+            progress.start()
+            response = self._dispatch('post', "/api/apps/{}/limit".format(app), json.dumps(body))
+        finally:
+            progress.cancel()
+            progress.join()
+        if response.status_code == requests.codes.created:  # @UndefinedVariable
+            version = response.headers['x-deis-release']
+            print("done, v{}\n".format(version))
+
+            self._print_limits(response.json())
+        else:
+            raise ResponseError(response)
+
+    def limit_unset(self, args):
+        """
+        Unsets resource limits for an application.
+
+        Usage: deis limit:unset <type>... [options]
+
+        Arguments:
+          <type>
+            the process type as defined in your Procfile, such as 'web' or 'worker'.
+            Note that Dockerfile apps have a default 'cmd' process type.
+
+        Options:
+          -a --app=<app>
+            the uniquely identifiable name for the application.
+        """
+        app = args.get('--app')
+        if not app:
+            app = self._session.app
+        values = {}
+        for k in args.get('<type>'):
+            values[k] = None
+        body = {'memory': json.dumps(values)}
+        sys.stdout.write('Applying limits... ')
+        sys.stdout.flush()
+        try:
+            progress = TextProgress()
+            progress.start()
+            response = self._dispatch('post', "/api/apps/{}/limit".format(app), json.dumps(body))
+        finally:
+            progress.cancel()
+            progress.join()
+        if response.status_code == requests.codes.created:  # @UndefinedVariable
+            version = response.headers['x-deis-release']
+            print("done, v{}\n".format(version))
+            self._print_limits(response.json())
+        else:
+            raise ResponseError(response)
+
+    def _print_limits(self, limit):
+        values = json.loads(limit['memory'])
+        print("=== {app} Limits".format(**limit))
+        items = values.items()
+        if len(items) == 0:
+            print('No resource limits')
+            return
+        keys = sorted(values)
+        width = max(map(len, keys)) + 5
+        for k in keys:
+            v = values[k]
+            print(("{k:<" + str(width) + "} {v}").format(**locals()))
+
     def ps(self, args):
         """
         Valid commands for processes:
