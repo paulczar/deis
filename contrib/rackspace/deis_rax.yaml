@@ -1,0 +1,179 @@
+heat_template_version: 2013-05-23
+
+description: Deploy a CoreOS cluster that tracks the Stable Channel
+
+parameters:
+  count:
+    description: Number of CoreOS machines to deploy
+    type: number
+    default: 3
+    constraints:
+    - range:
+        min: 1
+        max: 12
+      description: Must be between 3 and 12 servers.
+  flavor:
+    type: string
+    default: 4 GB Performance
+    constraints:
+    - allowed_values:
+      - 2 GB Performance
+      - 4 GB Performance
+      - 8 GB Performance
+      - 15 GB Performance
+      - 30 GB Performance
+      description: |
+        Must be a valid Rackspace Cloud Server flavor for the region you have
+        selected to deploy into.
+  name:
+    type: string
+    description: Name of each CoreOS machine booted
+    default: DEIS_Server
+  network_range:
+    label: Private Network CIDR
+    description: Private Network to for backend communication
+    type: string
+    default: 10.21.12.0/24
+
+resources:
+
+  ssh_key:
+    type: "OS::Nova::KeyPair"
+    properties:
+      name: { get_param: name }
+      save_private_key: true
+
+  deis_network:
+    type: Rackspace::Cloud::Network
+    properties:
+      label: { get_param: name }
+      cidr: { get_param: network_range }
+
+  deis_nodes:
+    type: "OS::Heat::ResourceGroup"
+    properties:
+      count: { get_param: count }
+      resource_def:
+        type: OS::Nova::Server
+        properties:
+          key_name: { get_resource: ssh_key }
+          image: "513f96f3-20e4-4865-b039-d2ca3944af4e"
+          flavor: { get_param: flavor }
+          name: { get_param: name }
+          user_data_format: RAW
+          config_drive: "true"
+          networks:
+            - uuid: "00000000-0000-0000-0000-000000000000"
+            - uuid: { get_resource: deis_network }
+          user_data: |
+            #cloud-config
+            ---
+            coreos:
+              etcd:
+                # generate a new token for each unique cluster from https://discovery.etcd.io/new
+                # uncomment the following line and replace it with your discovery URL
+                addr: $private_ipv4:4001
+                peer-addr: $private_ipv4:7001
+                bind-addr: $private_ipv4
+                peer-bind-addr: $private_ipv4
+                discovery: https://discovery.etcd.io/1f7bfac609c747e124790c1b4bc30551
+              fleet:
+              units:
+              - name: etcd.service
+                command: start
+              - name: fleet.service
+                command: start
+              - name: stop-update-engine.service
+                command: start
+                content: |
+                  [Unit]
+                  Description=stop update-engine
+
+                  [Service]
+                  Type=oneshot
+                  ExecStart=/usr/bin/systemctl stop update-engine.service
+                  ExecStartPost=/usr/bin/systemctl mask update-engine.service
+              - name: create-fleet-config.service
+                command: start
+                content: |
+                  [Unit]
+                  Description=creates fleet config, restarts fleet
+
+                  [Service]
+                  Before=etcd.service
+                  Type=oneshot
+                  ExecStart=/bin/sh -c '/bin/mkdir -p /etc/fleet && \
+                    /bin/echo etcd_servers=[\"http://$private_ipv4:4001\"] > /etc/fleet/fleet.conf && \
+                     /bin/systemctl restart fleet && \
+                     /bin/echo export FLEETCTL_ENDPOINT=http://$private_ipv4:4001 >> /home/core/.bashrc'
+            write_files:
+              - path: /home/core/.ssh/id_rsa
+                owner: core:core
+                permissions: 0600
+              - path: /etc/deis-release
+                content: |
+                  DEIS_RELEASE=latest
+              - path: /etc/motd
+                content: " \e[31m* *    \e[34m*   \e[32m*****    \e[39mddddd   eeeeeee iiiiiii   ssss\n\e[31m*   *  \e[34m* *  \e[32m*   *     \e[39md   d   e    e    i     s    s\n \e[31m* *  \e[34m***** \e[32m*****     \e[39md    d  e         i    s\n\e[32m*****  \e[31m* *    \e[34m*       \e[39md     d e         i     s\n\e[32m*   * \e[31m*   *  \e[34m* *      \e[39md     d eee       i      sss\n\e[32m*****  \e[31m* *  \e[34m*****     \e[39md     d e         i         s\n  \e[34m*   \e[32m*****  \e[31m* *      \e[39md    d  e         i          s\n \e[34m* *  \e[32m*   * \e[31m*   *     \e[39md   d   e    e    i    s    s\n\e[34m***** \e[32m*****  \e[31m* *     \e[39mddddd   eeeeeee iiiiiii  ssss\n\n\e[39mWelcome to Deis\t\t\tPowered by Core\e[38;5;45mO\e[38;5;206mS\e[39m\n"
+              - path: /etc/profile.d/nse-function.sh
+                permissions: 0755
+                content: |
+                  function nse() {
+                    sudo nsenter --pid --uts --mount --ipc --net --target $(docker inspect --format="{{ .State.Pid }}" $1)
+                  }
+              - path: /run/deis/bin/get_image
+                permissions: 0755
+                content: |
+                  #!/bin/bash
+                  # usage: get_image <component_path>
+                  IMAGE=`etcdctl get $1/image 2>/dev/null`
+
+                  # if no image was set in etcd, we use the default plus the release string
+                  if [ $? -ne 0 ]; then
+                    RELEASE=`etcdctl get /deis/release 2>/dev/null`
+
+                    # if no release was set in etcd, use the default provisioned with the server
+                    if [ $? -ne 0 ]; then
+                      source /etc/deis-release
+                      RELEASE=$DEIS_RELEASE
+                    fi
+
+                    IMAGE=$1:$RELEASE
+                  fi
+
+                  # remove leading slash
+                  echo ${IMAGE#/}
+
+  deis_loadbalancer:
+    type: Rackspace::Cloud::LoadBalancer
+    properties:
+      name: { get_param: name }
+      nodes:
+      - addresses: { get_attr: [deis_nodes, accessIPv4]} # This is where the
+                                                       # wiring magic happens
+        port: 80
+        condition: ENABLED
+      healthMonitor:
+        attemptsBeforeDeactivation: 3
+        delay: 10
+        timeout: 120
+        type: HTTP
+        path: "/health-check"
+        statusRegex: "."
+        bodyRegex: "."
+      protocol: HTTP
+      port: 80
+      virtualIps:
+      - type: PUBLIC
+        ipVersion: IPV4
+
+outputs:
+  lb_public_ip:
+    description: The public IP address of the load balancer
+    value: { get_attr: [deis_loadbalancer, PublicIp]}
+  deis_node_ips:
+    description: The public IP address of the load balancer
+    value: { get_attr: [deis_nodes, accessIPv4]}
+  private_key:
+    description: SSH Private Key
+    value: { get_attr: [ssh_key, private_key] }
