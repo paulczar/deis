@@ -1351,7 +1351,7 @@ class DeisClient(object):
 
         limit:list         list resource limits for an app
         limit:set          set resource limits for an app
-        config:unset       unset resource limits for an app
+        limit:unset        unset resource limits for an app
 
         Use `deis help [command]` to learn more.
         """

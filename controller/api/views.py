@@ -426,7 +426,7 @@ class AppLimitViewSet(BaseAppViewSet):
 
     def create(self, request, *args, **kwargs):
         request._data = request.DATA.copy()
-        # assume an existing config object exists
+        # assume an existing object exists
         obj = self.get_object()
         request.DATA['app'] = obj.app
         # merge values
