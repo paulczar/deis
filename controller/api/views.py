@@ -399,6 +399,46 @@ class AppConfigViewSet(BaseAppViewSet):
         return super(AppConfigViewSet, self).create(request, *args, **kwargs)
 
 
+class AppLimitViewSet(BaseAppViewSet):
+    """RESTful views for :class:`~api.models.Limit`."""
+
+    model = models.Limit
+    serializer_class = serializers.LimitSerializer
+
+    def get_object(self, *args, **kwargs):
+        """Return the Limit associated with the App's latest Release."""
+        app = get_object_or_404(models.App, id=self.kwargs['id'])
+        user = self.request.user
+        if user == app.owner or user in get_users_with_perms(app):
+            return app.release_set.latest().limit
+        raise PermissionDenied()
+
+    def post_save(self, limit, created=False):
+        if created:
+            release = limit.app.release_set.latest()
+            self.release = release.new(self.request.user, limit=limit)
+            limit.app.deploy(self.release)
+
+    def get_success_headers(self, data):
+        headers = super(AppLimitViewSet, self).get_success_headers(data)
+        headers.update({'X-Deis-Release': self.release.version})
+        return headers
+
+    def create(self, request, *args, **kwargs):
+        request._data = request.DATA.copy()
+        # assume an existing config object exists
+        obj = self.get_object()
+        request.DATA['app'] = obj.app
+        # merge values
+        values = obj.memory.copy()
+        provided = json.loads(request.DATA['memory'])
+        values.update(provided)
+        # remove keys if provided a null value
+        [values.pop(k) for k, v in provided.items() if v is None]
+        request.DATA['memory'] = values
+        return super(AppLimitViewSet, self).create(request, *args, **kwargs)
+
+
 class AppReleaseViewSet(BaseAppViewSet):
     """RESTful views for :class:`~api.models.Release`."""
 

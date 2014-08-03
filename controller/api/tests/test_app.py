@@ -48,7 +48,7 @@ class AppTest(TestCase):
         url = '/api/apps/{app_id}'.format(**locals())
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
-        body = {'id': 'new'}
+        body = {'id': 'new', 'cluster': 'new'}
         response = self.client.patch(url, json.dumps(body), content_type='application/json')
         self.assertEqual(response.status_code, 405)
         response = self.client.delete(url)

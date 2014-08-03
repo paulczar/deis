@@ -56,13 +56,13 @@ class FleetClient(object):
 
     # job api
 
-    def create(self, name, image, command='', template=None, use_announcer=True):
+    def create(self, name, image, command='', template=None, use_announcer=True, **kwargs):
         """
         Create a new job
         """
         print 'Creating {name}'.format(**locals())
         env = self.env.copy()
-        self._create_container(name, image, command, template or CONTAINER_TEMPLATE, env)
+        self._create_container(name, image, command, template or CONTAINER_TEMPLATE, env, **kwargs)
         self._create_log(name, image, command, LOG_TEMPLATE, env)
 
         if use_announcer:
@@ -70,9 +70,15 @@ class FleetClient(object):
         else:
             self._log_skipped_announcer('create', name)
 
-    def _create_container(self, name, image, command, template, env):
+    def _create_container(self, name, image, command, template, env, **kwargs):
         l = locals().copy()
         l.update(re.match(MATCH, name).groupdict())
+        # prepare memory limit for the container type
+        mem = kwargs.get('memory', {}).get(l['c_type'], None)
+        if mem:
+          l.update({'memory': '-m {}'.format(mem.lower())})
+        else:
+          l.update({'memory': ''})
         env.update({'FLEETW_UNIT': name + '.service'})
         env.update({'FLEETW_UNIT_DATA': base64.b64encode(template.format(**l))})
         return subprocess.check_call('fleetctl.sh submit {name}.service'.format(**l),
@@ -224,7 +230,7 @@ Description={name}
 [Service]
 ExecStartPre=/usr/bin/docker pull {image}
 ExecStartPre=/bin/sh -c "docker inspect {name} >/dev/null 2>&1 && docker rm -f {name} || true"
-ExecStart=/bin/sh -c "port=$(docker inspect -f '{{{{range $k, $v := .ContainerConfig.ExposedPorts }}}}{{{{$k}}}}{{{{end}}}}' {image} | cut -d/ -f1) ; docker run --name {name} -P -e PORT=$port {image} {command}"
+ExecStart=/bin/sh -c "port=$(docker inspect -f '{{{{range $k, $v := .ContainerConfig.ExposedPorts }}}}{{{{$k}}}}{{{{end}}}}' {image} | cut -d/ -f1) ; docker run --name {name} {memory} -P -e PORT=$port {image} {command}"
 ExecStop=/usr/bin/docker rm -f {name}
 TimeoutStartSec=20m
 """

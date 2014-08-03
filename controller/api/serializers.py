@@ -14,6 +14,10 @@ from api import models
 from api import utils
 
 
+PROCTYPE_MATCH = re.compile(r'^(?P<type>[a-z]+)')
+MEMLIMIT_MATCH = re.compile('(?P<mem>[0-9]+[BbKkMmGg])$')
+
+
 class OwnerSlugRelatedField(serializers.SlugRelatedField):
     """Filter queries by owner as well as slug_field."""
 
@@ -102,6 +106,29 @@ class ConfigSerializer(serializers.ModelSerializer):
         read_only_fields = ('uuid', 'created', 'updated')
 
 
+class LimitSerializer(serializers.ModelSerializer):
+    """Serialize a :class:`~api.models.Limit` model."""
+
+    owner = serializers.Field(source='owner.username')
+    app = serializers.SlugRelatedField(slug_field='id')
+    memory = serializers.ModelField(
+        model_field=models.Limit()._meta.get_field('memory'), required=False)
+
+    class Meta:
+        """Metadata options for a :class:`LimitSerializer`."""
+        model = models.Limit
+        read_only_fields = ('uuid', 'created', 'updated')
+
+    def validate_memory(self, attrs, source):
+        for k, v in attrs.get(source, {}).items():
+            if not re.match(PROCTYPE_MATCH, k):
+                raise serializers.ValidationError("Process types can only contain [a-z]")
+            if not re.match(MEMLIMIT_MATCH, v):
+                raise serializers.ValidationError(
+                    "Limit format: <number><unit>, where unit = B, K, M or G")
+        return attrs
+
+
 class ReleaseSerializer(serializers.ModelSerializer):
     """Serialize a :class:`~api.models.Release` model."""
 
@@ -109,6 +136,7 @@ class ReleaseSerializer(serializers.ModelSerializer):
     app = serializers.SlugRelatedField(slug_field='id')
     config = serializers.SlugRelatedField(slug_field='uuid')
     build = serializers.SlugRelatedField(slug_field='uuid')
+    limit = serializers.SlugRelatedField(slug_field='uuid')
 
     class Meta:
         """Metadata options for a :class:`ReleaseSerializer`."""
