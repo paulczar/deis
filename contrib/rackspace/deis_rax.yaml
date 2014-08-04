@@ -76,7 +76,7 @@ resources:
                 peer-addr: $private_ipv4:7001
                 bind-addr: $private_ipv4
                 peer-bind-addr: $private_ipv4
-                discovery: https://discovery.etcd.io/1f7bfac609c747e124790c1b4bc30551
+                discovery: https://discovery.etcd.io/58b922a460c8404e0a1f2aaae898d125
               fleet:
               units:
               - name: etcd.service
@@ -102,14 +102,11 @@ resources:
                   [Service]
                   Before=etcd.service
                   Type=oneshot
-                  ExecStart=/bin/sh -c '/bin/mkdir -p /etc/fleet && \
-                    /bin/echo etcd_servers=[\"http://$private_ipv4:4001\"] > /etc/fleet/fleet.conf && \
-                     /bin/systemctl restart fleet && \
-                     /bin/echo export FLEETCTL_ENDPOINT=http://$private_ipv4:4001 >> /home/core/.bashrc'
+                  ExecStartPre=/bin/mkdir -p /etc/fleet
+                  ExecStart=/bin/sh -c '/bin/echo etcd_servers=[\"http://$private_ipv4:4001\"] > /etc/fleet/fleet.conf'
+                  ExecStartPost=/bin/systemctl restart fleet
+                  ExecStartPost=/bin/sh -c '/bin/echo export FLEETCTL_ENDPOINT=http://$private_ipv4:4001 >> /home/core/.bashrc'
             write_files:
-              - path: /home/core/.ssh/id_rsa
-                owner: core:core
-                permissions: 0600
               - path: /etc/deis-release
                 content: |
                   DEIS_RELEASE=latest

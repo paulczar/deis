@@ -59,7 +59,7 @@ $ export DEIS_NUM_INSTANCES=3
 $ export STACK=deis
 $ heat stack-create $STACK --template-file ./deis_rax.yaml \
          -P flavor='2 GB Performance' -P count=$DEIS_NUM_INSTANCES \
-         -P user-data="$(< ./deis_rax_user-data.yaml)" -P name="DEIS_Server"
+         -P name="$STACK"
 ```
 
 
@@ -71,20 +71,6 @@ $ export STACK=deis_onmetal
 $ heat stack-create $STACK --template-file ./deis_rax_onmetal.yaml \
           -P flavor='OnMetal Compute v1' -P count=$DEIS_NUM_INSTANCES \
          -P name="$STACK"
-```
-
-OnMetal cannot read the $private_addr in the user-data.  therefore we need to update the etcd service.  SSH into each node and run the following:
-
-```console
-$ ssh root@<ip of server>
-$ sudo bash
-$ export IP=$(ifconfig bond0.401 | grep 'inet ' | awk '{print $2}') && \
-    echo ETCD_PEER_ADDR=$IP:7001 > /etc/env.d/etcd && \
-    echo ETCD_ADDR=$IP:4001  >> /etc/env.d/etcd && \
-    sed -i 's/^.*ADDR.*$//' /run/systemd/system/etcd.service.d/20-cloudinit.conf && \
-    systemctl daemon-reload && \
-    systemctl restart etcd && \
-    systemctl status etcd 
 ```
 
 Note that for scheduling to work properly, clusters must consist of at least 3 nodes and always have an odd number of members.
@@ -99,7 +85,7 @@ Deis clusters of less than 3 nodes are unsupported.
 Save your SSH private key from heat output.
 
 ```
-DEIS_KEY=$(heat stack-show deis | grep RSA | awk -F\" '{print $4}') && printf $DEIS_KEY > ~/deis_key && chmod 0600 ~/deis_key
+DEIS_KEY=$(heat stack-show $STACK | grep RSA | awk -F\" '{print $4}') && printf $DEIS_KEY > ~/deis_key && chmod 0600 ~/deis_key
 ssh-add ~/deis_key
 ```
 

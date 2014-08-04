@@ -60,7 +60,7 @@ resources:
                 peer-addr: $private_ipv4:7001
                 bind-addr: $private_ipv4
                 peer-bind-addr: $private_ipv4
-                discovery: https://discovery.etcd.io/1f7bfac609c747e124790c1b4bc30551
+                discovery: https://discovery.etcd.io/58b922a460c8404e0a1f2aaae898d125
               fleet:
               units:
               - name: stop-update-engine.service
@@ -81,7 +81,8 @@ resources:
                   [Service]
                   Before=fix-etcd-env.service
                   Type=oneshot
-                  ExecStart=/bin/sh -c "echo COREOS_PUBLIC_IPV4=`ifconfig bond0.101 | grep 'inet ' | awk '{print $2}'` >> /etc/environment && echo COREOS_PRIVATE_IPV4=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'` >> /etc/environment"
+                  ExecStartPre=/bin/sh -c "echo COREOS_PUBLIC_IPV4=`ifconfig bond0.101 | grep 'inet ' | awk '{print $2}'` >> /etc/environment"
+                  ExecStart=/bin/sh -c "echo COREOS_PRIVATE_IPV4=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'` >> /etc/environment"
               - name: fix-etcd-env.service
                 command: start
                 content: |
@@ -91,7 +92,9 @@ resources:
                   [Service]
                   Before=etcd.service
                   Type=oneshot
-                  ExecStart=/bin/sh -c "sed -i \"s/=:/=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:/\" /run/systemd/system/etcd.service.d/20-cloudinit.conf && systemctl daemon-reload && systemctl etcd restart"
+                  ExecStart=/bin/sh -c "sed -i \"s/=:/=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:/\" /run/systemd/system/etcd.service.d/20-cloudinit.conf"
+                  ExecStartPost=systemctl daemon-reload
+                  ExecStartPost=systemctl etcd restart
               - name: create-fleet-config.service
                 command: start
                 content: |
@@ -101,9 +104,9 @@ resources:
                   [Service]
                   Before=etcd.service
                   Type=oneshot
-                  ExecStart=/bin/sh -c "/bin/mkdir -p /etc/fleet && \
-                     /bin/echo etcd_servers=[\"`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001\"] > /etc/fleet/fleet.conf && \
-                     /bin/systemctl restart fleet"
+                  ExecStartPre=/bin/mkdir -p /etc/fleet
+                  ExecStart=/bin/sh -c "/bin/echo etcd_servers=[\"http://`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001\"] > /etc/fleet/fleet.conf'
+                  ExecStartPost=/bin/systemctl restart fleet"
               - name: etcd.service
                 command: start
               - name: fleet.service
@@ -126,19 +129,22 @@ resources:
                   #!/bin/bash
                   # usage: get_image <component_path>
                   IMAGE=`etcdctl get $1/image 2>/dev/null`
-            
+
                   # if no image was set in etcd, we use the default plus the release string
                   if [ $? -ne 0 ]; then
                     RELEASE=`etcdctl get /deis/release 2>/dev/null`
-            
+
                     # if no release was set in etcd, use the default provisioned with the server
                     if [ $? -ne 0 ]; then
                       source /etc/deis-release
                       RELEASE=$DEIS_RELEASE
                     fi
-            
+
                     IMAGE=$1:$RELEASE
                   fi
+
+                  # remove leading slash
+                  echo ${IMAGE#/}
 
   deis_loadbalancer:
     type: Rackspace::Cloud::LoadBalancer
