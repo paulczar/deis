@@ -29,6 +29,13 @@ parameters:
     type: string
     description: Name of each CoreOS machine booted
     default: DEIS_Server
+  etcd_discovery:
+    type: string
+    description: URL of etcd discovery
+  deis_version:
+    type: string
+    description: version of deis to install ( equiv to github branch/release)
+    default: master
   network_range:
     label: Private Network CIDR
     description: Private Network to for backend communication
@@ -66,7 +73,7 @@ resources:
             - uuid: "00000000-0000-0000-0000-000000000000"
             - uuid: { get_resource: deis_network }
           user_data:
-            str_replace: 
+            str_replace:
               template: |
                 #cloud-config
                 ---
@@ -78,7 +85,7 @@ resources:
                     peer-addr: $private_ipv4:7001
                     bind-addr: $private_ipv4
                     peer-bind-addr: $private_ipv4
-                    discovery: https://discovery.etcd.io/f3e6daab9075f8b1799e63cde2e4ed00
+                    discovery: %etcd_discovery%
                   fleet:
                   units:
                   - name: etcd.service
@@ -107,7 +114,18 @@ resources:
                       ExecStartPre=/bin/mkdir -p /etc/fleet
                       ExecStart=/bin/sh -c '/bin/echo etcd_servers=[\"http://$private_ipv4:4001\"] > /etc/fleet/fleet.conf'
                       ExecStartPost=/bin/systemctl restart fleet
-                      ExecStartPost=/bin/sh -c '/bin/echo export FLEETCTL_ENDPOINT=http://$private_ipv4:4001 >> /home/core/.bashrc'
+                  - name: install_deis.service
+                    command: start
+                    after: docker.service
+                    content: |
+                      [Unit]
+                      Description=Installs DEIS
+
+                      [Service]
+                      Type=oneshot
+                      ExecStartPre=docker pull paulczar/deis-install
+                      ExecStartPre=/bin/bash -c "sleep $(( ( RANDOM % 10 )  + 1 ))"
+                      ExecStart=/bin/sh -c 'docker run -e KEY="`< /run/deis/keys/deis`" -e ETCDCTL_PEERS=$private_ipv4:4001 -e VERSION=%etcd_version% -e FLEETCTL_ENDPOINT=http://$private_ipv4:4001 -e FLEETCTL_TUNNEL=$private_ipv4 paulczar/deis-install'
                 write_files:
                   - path: /etc/deis-release
                     content: |
@@ -123,8 +141,7 @@ resources:
                   - path: /run/deis/keys/deis
                     permissions: 0600
                     owner: core
-                    content: |
-                      %ssh_private_key%
+                    content: "%ssh_private_key%"
                   - path: /run/deis/bin/get_image
                     permissions: 0755
                     content: |
@@ -149,6 +166,8 @@ resources:
                       echo ${IMAGE#/}
               params:
                 "%ssh_private_key%": { get_attr: [ssh_key, private_key] }
+                "%etcd_discovery%": { get_param: etcd_discovery }
+                "%etcd_version%": { get_param: deis_version }
 
   deis_loadbalancer:
     type: Rackspace::Cloud::LoadBalancer
