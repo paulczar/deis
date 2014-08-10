@@ -66,14 +66,13 @@ $ export DEIS_NUM_INSTANCES=3 && \
 
 #### Or Create a 3 node OnMetal cluster via Heat:
 
-_experimental, not fully featured yet_
-
 ```console
-$ export DEIS_NUM_INSTANCES=3
-$ export STACK=deis_onmetal
-$ heat stack-create $STACK --template-file ./deis_rax_onmetal.yaml \
+$ export DEIS_NUM_INSTANCES=3 && \
+    export STACK=deis_onmetal && \
+    export ETCD=$(curl https://discovery.etcd.io/new) && \
+    heat stack-create $STACK --template-file ./deis_rax_onmetal.yaml \
           -P flavor='OnMetal Compute v1' -P count=$DEIS_NUM_INSTANCES \
-         -P name="$STACK"
+         -P name="$STACK" -P etcd_discovery="$ETCD"
 ```
 
 Note that for scheduling to work properly, clusters must consist of at least 3 nodes and always have an odd number of members.
@@ -107,8 +106,20 @@ $ heat stack-list
 Save your SSH private key from heat output.
 
 ```console
-$ DEIS_KEY=$(heat stack-show $STACK | grep RSA | awk -F\" '{print $4}') && printf $DEIS_KEY > ~/deis_key && chmod 0600 ~/deis_key
+$ DEIS_KEY=$(heat output-show $STACK private_key | sed 's/"//g') && printf $DEIS_KEY > ~/deis_key && chmod 0600 ~/deis_key
 $ ssh-add ~/deis_key
+```
+
+### View heat ouput data
+
+Show Load Balancer IP:
+```console
+$  heat output-show $STACK lb_public_ip
+```
+
+Show Public IPs of nodes:
+```console
+$  heat output-show $STACK deis_node_ips
 ```
 
 
@@ -153,22 +164,31 @@ deis-registry.service   launched  loaded  active  running - e01cc352.../162.242.
 deis-router@1.service   launched  loaded  active  running - e01cc352.../162.242.218.233
 ```
 
-if deis failed to install ( the etcd keys are empty ) then you can rerun the install from any of the nodes
+if deis failed to install ( the etcd keys are empty )  then you can rerun the install from any of the nodes.  There is currently a bug in the `master` branch that causes the `deis-builder` service to fail.  running this a few times seems to fix it.
+
+#### From local machine
 
 ```console
-$ systemctl start install_deis
+$ export DEIS_NUM_ROUTERS=3
+$ make run
+```
+
+#### From CoreOS Server
+
+```console
+$ systemctl start install-deis
 ```
 
 or you can run it manually by pulling the docker command out of the service.
 
 ```console
-$ grep ExecStart= /etc/systemd/system/install_deis.service | awk -F\' '{print $2}' | sh
+$ grep ExecStart= /etc/systemd/system/install-deis.service | awk -F\' '{print $2}' | sh
 ```
 
 The script will deploy Deis and make sure the services start properly.
 
 ### Configure Load Balancer
-Heat created a load balander for us, but we need to create a second one that shares the same VIP from the Rackspace Cloud UI for SSH.  Hopefully we can do this via heat as well, but I haven't worked out how yet.
+Heat created a load balander for us, but we need to create a second one that shares the same VIP for SSH.  Hopefully we can do this via heat as well, but I haven't worked out how yet. In the meantime the easiest way to do this is via the Rackspace Web UI.  You also might want to enable heath checking on both LBs at this point.
 
     Load Balancer 2
     Virtual IP Shared VIP on Another Load Balancer (select Load Balancer 1)
@@ -178,16 +198,71 @@ Heat created a load balander for us, but we need to create a second one that sha
 ### Configure DNS
 You'll need to configure DNS records so you can access applications hosted on Deis. See [Configuring DNS](http://docs.deis.io/en/latest/installing_deis/configure-dns/) for details.
 
-If you don't have a domain to use, or you're just testing you can use the IP of your LB in a xip.io URI ( example:  50.56.167.203.xip.io )
+You can find the IP address of your Load Balancer via the `heat stack-show $STACK | less` command. 
+
+If you don't have a domain to use, or you're just testing you can use the IP of your LB in a xip.io URI ( example:  50.56.167.203.xip.io ).  We'll use this in our examples below.
 
 ### Use Deis!
-After that, register with Deis!
+
+Register your first user with Deis:
 ```console
-$ deis register http://deis.50.56.167.203.xip.io
+$ export DEIS_DNS=$(heat output-show $STACK lb_public_ip | sed 's/"//g').xip.io
+$ deis register http://$DEIS_DNS
 username: deis
 password:
 password (confirm):
 email: info@opdemand.com
+$ deis keys:add
+```
+
+Create a cluster with Deis:
+```console
+$ heat output-show $STACK deis_networks          
+[
+  {
+    "public": [
+      "23.253.157.230"
+    ], 
+    "private": [
+      "10.184.4.68"
+    ]
+  }, 
+  {
+    "public": [
+      "23.253.157.227"
+    ], 
+    "private": [
+      "10.184.4.67"
+    ]
+  }, 
+  {
+    "public": [
+      "23.253.157.231"
+    ], 
+    "private": [
+      "10.184.4.69"
+    ]
+  }
+]
+
+$ deis clusters:create dev dev.$DEIS_DNS --hosts=10.184.4.68,10.184.4.69,10.184.4.67 --auth=~/deis_key
+Creating cluster... done, created dev
+```
+
+Deploy an example app:
+```console
+$ git clone https://github.com/deis/helloworld.git
+$ cd helloworld
+$ deis create
+$ git push deis master
+..
+..
+remote: 
+remote: -----> kabuki-gatepost deployed to Deis
+remote:        http://kabuki-gatepost.dev.104.130.42.40.xip.io
+$ curl http://kabuki-gatepost.dev.104.130.42.40.xip.io
+Welcome to Deis!
+See the documentation at http://docs.deis.io/ for more information.
 ```
 
 ## Hack on Deis

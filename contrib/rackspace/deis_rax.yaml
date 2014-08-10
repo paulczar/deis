@@ -123,9 +123,9 @@ resources:
 
                       [Service]
                       Type=oneshot
-                      ExecStartPre=docker pull paulczar/deis-install
+                      ExecStartPre=docker pull paulczar/deis-install:latest
                       ExecStartPre=/bin/bash -c "sleep $(( ( RANDOM % 10 )  + 1 ))"
-                      ExecStart=/bin/sh -c 'docker run -e KEY="`< /run/deis/keys/deis`" -e ETCDCTL_PEERS=$private_ipv4:4001 -e VERSION=%etcd_version% -e FLEETCTL_ENDPOINT=http://$private_ipv4:4001 -e FLEETCTL_TUNNEL=$private_ipv4 paulczar/deis-install'
+                      ExecStart=/bin/sh -c 'docker run -e KEY="`< /run/deis/keys/deis`" -e DEIS_NUM_ROUTERS=%deis_num_routers% -e ETCDCTL_PEERS=$private_ipv4:4001 -e VERSION=%deis_version% -e FLEETCTL_ENDPOINT=http://$private_ipv4:4001 -e FLEETCTL_TUNNEL=$private_ipv4 paulczar/deis-install'
                 write_files:
                   - path: /etc/deis-release
                     content: |
@@ -167,7 +167,8 @@ resources:
               params:
                 "%ssh_private_key%": { get_attr: [ssh_key, private_key] }
                 "%etcd_discovery%": { get_param: etcd_discovery }
-                "%etcd_version%": { get_param: deis_version }
+                "%deis_version%": { get_param: deis_version }
+                "%deis_num_routers%": { get_param: count }
 
   deis_loadbalancer:
     type: Rackspace::Cloud::LoadBalancer
@@ -185,7 +186,6 @@ resources:
         type: HTTP
         path: "/health-check"
         statusRegex: "."
-        bodyRegex: "."
       protocol: HTTP
       port: 80
       virtualIps:
@@ -197,8 +197,11 @@ outputs:
     description: The public IP address of the load balancer
     value: { get_attr: [deis_loadbalancer, PublicIp]}
   deis_node_ips:
-    description: The public IP address of the load balancer
+    description: The public IP addresses of deis nodes
     value: { get_attr: [deis_nodes, accessIPv4]}
+  deis_networks:
+    description: The networks of the deis nodes.
+    value: { get_attr: [deis_nodes, networks]}
   private_key:
     description: SSH Private Key
     value: { get_attr: [ssh_key, private_key] }
