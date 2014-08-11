@@ -60,12 +60,13 @@ $ export DEIS_NUM_INSTANCES=3 && \
   export ETCD=$(curl https://discovery.etcd.io/new) && \
   heat stack-create $STACK --template-file ./deis_rax.yaml \
          -P flavor='2 GB Performance' -P count=$DEIS_NUM_INSTANCES \
-         -P name="$STACK" -P etcd_discovery="$ETCD"
+         -P name="$STACK" -P etcd_discovery="$ETCD" -P deis_version='v0.10.0'
 ```
 
 
 #### Or Create a 3 node OnMetal cluster via Heat:
 
+__OnMetal support is still in testing.   Use at your own risk.__
 ```console
 $ export DEIS_NUM_INSTANCES=3 && \
     export STACK=deis_onmetal && \
@@ -117,9 +118,9 @@ Show Load Balancer IP:
 $  heat output-show $STACK lb_public_ip
 ```
 
-Show Public IPs of nodes:
+Show IP addresses of nodes:
 ```console
-$  heat output-show $STACK deis_node_ips
+$  heat output-show $STACK deis_networks   
 ```
 
 
@@ -204,7 +205,7 @@ If you don't have a domain to use, or you're just testing you can use the IP of 
 
 ### Use Deis!
 
-Register your first user with Deis:
+Register your first [admin] user with Deis:
 ```console
 $ export DEIS_DNS=$(heat output-show $STACK lb_public_ip | sed 's/"//g').xip.io
 $ deis register http://$DEIS_DNS
@@ -213,6 +214,14 @@ password:
 password (confirm):
 email: info@opdemand.com
 $ deis keys:add
+```
+
+### Disable user registration:
+
+If you're running DEIS on public infrastructure, you don't want users to be able to register themselves.
+
+```console
+$ etcdctl set --ttl=0 /deis/controller/registrationEnabled 0
 ```
 
 Create a cluster with Deis:

@@ -86,9 +86,9 @@ resources:
                     content: |
                       [Unit]
                       Description=creates coreos environment
+                      Before=fix-etcd-env.service
 
                       [Service]
-                      Before=fix-etcd-env.service
                       Type=oneshot
                       ExecStartPre=/bin/sh -c "echo COREOS_PUBLIC_IPV4=`ifconfig bond0.101 | grep 'inet ' | awk '{print $2}'` >> /etc/environment"
                       ExecStart=/bin/sh -c "echo COREOS_PRIVATE_IPV4=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'` >> /etc/environment"
@@ -97,37 +97,39 @@ resources:
                     content: |
                       [Unit]
                       Description=fixes etcd service
+                      Before=etcd.service
                 
                       [Service]
-                      Before=etcd.service
                       Type=oneshot
                       ExecStart=/bin/sh -c "sed -i \"s/=:/=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:/\" /run/systemd/system/etcd.service.d/20-cloudinit.conf"
+                      ExecStartPost=/bin/sh -c "echo Environment=\"ETCD_BIND_ADDR: `ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`\" >> /run/systemd/system/etcd.service.d/20-cloudinit.conf"
+                      ExecStartPost=/bin/sh -c "echo Environment=\"ETCD_PEER_ADDR: `ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`\" >> /run/systemd/system/etcd.service.d/20-cloudinit.conf"
                       ExecStartPost=systemctl daemon-reload
-                      ExecStartPost=systemctl etcd restart
+                      ExecStartPost=systemctl restart etcd
                   - name: create-fleet-config.service
                     command: start
                     content: |
                       [Unit]
                       Description=creates fleet config, restarts fleet
+                      Before=etcd.service
 
                       [Service]
-                      Before=etcd.service
                       Type=oneshot
                       ExecStartPre=/bin/mkdir -p /etc/fleet
                       ExecStart=/bin/sh -c "/bin/echo etcd_servers=[\"http://`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001\"] > /etc/fleet/fleet.conf"
                       ExecStartPost=/bin/systemctl restart fleet"
                   - name: install-deis.service
                     command: start
-                    after: docker.service
                     content: |
                       [Unit]
                       Description=Installs DEIS
+                      After=docker.service
 
                       [Service]
                       Type=oneshot
-                      ExecStartPre=/usr/bin/docker pull paulczar/deis-install:0.5.0
+                      ExecStartPre=/usr/bin/docker pull paulczar/deis-install:latest
                       ExecStartPre=/bin/bash -c "sleep $(( ( RANDOM % 10 )  + 1 ))"
-                      ExecStart=/bin/sh -c "docker run -t -i -e KEY=\"`< /run/deis/keys/deis`\" -e DEIS_NUM_ROUTERS=%deis_num_routers% -e ETCDCTL_PEERS=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001 -e VERSION=%deis_version% -e FLEETCTL_ENDPOINT=http://`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001 -e FLEETCTL_TUNNEL=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'` paulczar/deis-install:0.5.0"
+                      ExecStart=/bin/sh -c "/usr/bin/docker run -t -i -e KEY=\"`< /run/deis/keys/deis`\" -e DEIS_NUM_ROUTERS=%deis_num_routers% -e ETCDCTL_PEERS=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001 -e VERSION=%deis_version% -e FLEETCTL_ENDPOINT=http://`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'`:4001 -e FLEETCTL_TUNNEL=`ifconfig bond0.401 | grep 'inet ' | awk '{print $2}'` paulczar/deis-install:latest"
                   - name: etcd.service
                     command: start
                   - name: fleet.service
