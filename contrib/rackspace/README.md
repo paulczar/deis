@@ -88,13 +88,28 @@ You'll need to create two load balancers on Rackspace to handle your cluster.
     Protocol TCP
 
 ### Use Deis!
-After that, register with Deis!
+
+Register your first user with Deis:
 ```console
 $ deis register http://deis.example.org
 username: deis
 password:
 password (confirm):
 email: info@opdemand.com
+$ deis keys:add
+```
+
+Create a cluster with Deis:
+```console
+$ deis clusters:create dev dev.example.org --hosts=10.184.4.65,10.184.4.66,10.184.4.67 --auth=~/deis_key
+```
+
+Deploy an example app:
+```console
+$ git clone https://github.com/deis/helloworld.git
+$ cd helloworld
+$ deis create
+$ git push deis master
 ```
 
 ## Hack on Deis

@@ -42,14 +42,6 @@ $ source ~/.openrc
 ```
 
 
-### Create userdata with new etcd discovery URL
-
-This needs to be run _prior_ to any time that you create a new heat stack:
-
-```console
-./regenerate_etcd.sh
-```
-
 ### Launch the stack
 
 #### Create a 3 node VM cluster via Heat:
