@@ -57,11 +57,11 @@ else
 fi
 
 if ! neutron security-group-list | grep -q $DEIS_SECGROUP &>/dev/null; then
-  neutron security-group-create deis
-  neutron security-group-rule-create --protocol tcp --remote-ip-prefix 0/0 --port-range-min 22 --port-range-max 22 deis
-  neutron security-group-rule-create --protocol tcp --remote-ip-prefix 0/0 --port-range-min 2222 --port-range-max 22222 deis
-  neutron security-group-rule-create --protocol tcp --remote-ip-prefix 0/0 --port-range-min 80 --port-range-max 80 deis
-  neutron security-group-rule-create --protocol icmp --remote-ip-prefix 0/0 deis
+  neutron security-group-create $DEIS_SECGROUP
+  neutron security-group-rule-create --protocol tcp --remote-ip-prefix 0/0 --port-range-min 22 --port-range-max 22 $DEIS_SECGROUP
+  neutron security-group-rule-create --protocol tcp --remote-ip-prefix 0/0 --port-range-min 2222 --port-range-max 22222 $DEIS_SECGROUP
+  neutron security-group-rule-create --protocol tcp --remote-ip-prefix 0/0 --port-range-min 80 --port-range-max 80 $DEIS_SECGROUP
+  neutron security-group-rule-create --protocol icmp --remote-ip-prefix 0/0 $DEIS_SECGROUP
 fi
 
 if [ -z "$DEIS_NUM_INSTANCES" ]; then
